@@ -3,6 +3,9 @@
 const { pipeline, Transform } = require('stream')
 const split2 = require('split2')
 const strftime = require('strftime').timezone(0)
+const {Storage} = require('@google-cloud/storage');
+
+const storage = new Storage({keyFilename: "gcp-metrics-service-acct-key.json"});
 
 const jsonStream = new Transform({
   readableObjectMode: true,
@@ -140,16 +143,24 @@ const logTransformStream = new Transform({
   }
 })
 
-pipeline(
-  process.stdin,
-  split2(),
-  jsonStream,
-  logTransformStream,
-  process.stdout,
-  (err) => {
-    if (err) {
-      console.error('ERROR', err)
-      process.exit(1)
+
+exports.processLogs = (data, context) => {
+  const file = data;
+  bucketName = file.bucket;
+  fileName = file.name;
+  processedFile = fileName.split("/")[0];
+
+  pipeline(
+    storage.bucket(bucketName).file(fileName).createReadStream(),
+    split2(),
+    jsonStream,
+    logTransformStream,
+    storage.bucket('processed-logs-nodejs').file(processedFile).createWriteStream({ resumable: false, flags: 'a'}), //We want to appened to the file all of the days results
+    (err) => {
+      if (err) {
+        console.error('ERROR', err)
+        process.exit(1)
+      }
     }
-  }
-)
+  )
+}
